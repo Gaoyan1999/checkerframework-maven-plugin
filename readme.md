@@ -1,0 +1,1 @@
+# Maven Checker Framework Plugin

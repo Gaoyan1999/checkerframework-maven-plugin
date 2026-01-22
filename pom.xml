@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>org.checkerframework</groupId>
-    <artifactId>checker-maven-plugin</artifactId>
+    <artifactId>checkerframework-maven-plugin</artifactId>
     <version>1.0-SNAPSHOT</version>
     <packaging>maven-plugin</packaging>
 
@@ -23,7 +23,7 @@
             <version>3.8.1</version>
             <scope>provided</scope>
         </dependency>
-        
+
         <dependency>
             <groupId>org.apache.maven.plugin-tools</groupId>
             <artifactId>maven-plugin-annotations</artifactId>
@@ -33,22 +33,22 @@
 
         <dependency>
             <groupId>org.apache.maven</groupId>
-            <artifactId>maven-project</artifactId>
-            <version>2.2.1</version>
+            <artifactId>maven-core</artifactId>
+            <version>3.8.1</version>
             <scope>provided</scope>
         </dependency>
 
         <dependency>
             <groupId>org.checkerframework</groupId>
-            <artifactId>checker</artifactId>
-            <version>3.21.3</version>
+            <artifactId>checker-qual</artifactId>
+            <version>3.53.0</version>
         </dependency>
 
         <dependency>
-            <groupId>org.apache.maven</groupId>
-            <artifactId>maven-core</artifactId>
-            <version>3.8.1</version>
-            <scope>provided</scope>
+            <groupId>org.checkerframework</groupId>
+            <artifactId>checker</artifactId>
+            <version>3.53.0</version>
+            <scope>runtime</scope>
         </dependency>
     </dependencies>
 </project>
