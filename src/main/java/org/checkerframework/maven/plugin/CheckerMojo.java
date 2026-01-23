@@ -103,6 +103,12 @@ public class CheckerMojo extends AbstractMojo {
   @Parameter(property = "procOnly", defaultValue = "true")
   private boolean procOnly;
 
+  /** The Checker Framework JAR file for the checker artifact */
+  private File checkerFrameworkJar;
+
+  /** The Checker Framework JAR file for the checker-qual artifact */
+  private File checkerQualJar;
+
   @Override
   public void execute() throws MojoExecutionException, MojoFailureException {
     final Log log = getLog();
@@ -217,47 +223,6 @@ public class CheckerMojo extends AbstractMojo {
 
   // --- Helper methods ---
 
-  /**
-   * Find the Checker Framework JAR file path Returns the paths of the checker and checker-qual JAR
-   * files, connected by the system path separator First try to find it from the project
-   * dependencies, if not found, resolve it from the local repository
-   */
-  private String findCheckerFrameworkJar() {
-    final Log log = getLog();
-
-    // Get checker jar
-    File checkerJarFile =
-        PathUtils.getFrameworkJar(
-            "checker", project, repositorySystem, localRepository, checkerFrameworkVersion, log);
-
-    // Get checker-qual jar
-    File checkerQualJarFile =
-        PathUtils.getFrameworkJar(
-            "checker-qual",
-            project,
-            repositorySystem,
-            localRepository,
-            checkerFrameworkVersion,
-            log);
-
-    // If both jars are found, return the connected path
-    if (checkerJarFile != null && checkerQualJarFile != null) {
-      return checkerJarFile.getAbsolutePath()
-          + File.pathSeparator
-          + checkerQualJarFile.getAbsolutePath();
-    }
-
-    // If only the checker jar is found, return it (it can at least work, although some
-    // classes may be missing)
-    if (checkerJarFile != null) {
-      log.warn(
-          "Only found checker jar, checker-qual jar is missing. Some classes may not be found.");
-      return checkerJarFile.getAbsolutePath();
-    }
-
-    return null;
-  }
-
   private void concatJavacPath(List<String> command) {
     command.add(PathUtils.getExecutablePath(executable, toolchainManager, session));
   }
@@ -276,15 +241,16 @@ public class CheckerMojo extends AbstractMojo {
 
   private void concatProcessorPath(List<String> command) {
     final Log log = getLog();
-    // TODO: fix it
-    String checkerFrameworkJar = findCheckerFrameworkJar();
-    if (checkerFrameworkJar != null) {
-      command.add("-processorpath");
-      command.add(checkerFrameworkJar);
-      log.debug("Using processorpath: " + checkerFrameworkJar);
-    } else {
-      log.warn("Could not find Checker Framework JAR. Trying to use classpath instead.");
+    if (checkerFrameworkJar == null || checkerQualJar == null) {
+      log.error("Could not find Checker Framework JARs");
+      return;
     }
+    final String ProcessorPath =
+        checkerFrameworkJar.getAbsolutePath()
+            + File.pathSeparator
+            + checkerQualJar.getAbsolutePath();
+    command.add("-processorpath");
+    command.add(ProcessorPath);
   }
 
   private void concatAnnotationProcessor(List<String> command) {
@@ -336,5 +302,22 @@ public class CheckerMojo extends AbstractMojo {
     command.add("-J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED");
   }
 
-  private void locateArtifacts() {}
+  /**
+   * Locate the Checker Framework JAR files for the checker and checker-qual artifacts. The priority
+   * is 1. From project dependencies 2. From local repository
+   */
+  private void locateArtifacts() {
+    final Log log = getLog();
+    checkerFrameworkJar =
+        PathUtils.getFrameworkJar(
+            "checker", project, repositorySystem, localRepository, checkerFrameworkVersion, log);
+    checkerQualJar =
+        PathUtils.getFrameworkJar(
+            "checker-qual",
+            project,
+            repositorySystem,
+            localRepository,
+            checkerFrameworkVersion,
+            log);
+  }
 }
