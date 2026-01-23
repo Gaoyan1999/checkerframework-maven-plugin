@@ -8,14 +8,17 @@ import java.util.Optional;
 import java.util.Set;
 
 import org.apache.maven.artifact.Artifact;
+import org.apache.maven.artifact.factory.ArtifactFactory;
 import org.apache.maven.artifact.repository.ArtifactRepository;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.repository.RepositorySystem;
 import org.apache.maven.toolchain.Toolchain;
 import org.apache.maven.toolchain.ToolchainManager;
 import org.codehaus.plexus.util.DirectoryScanner;
+import org.eclipse.aether.impl.ArtifactResolver;
 
 /**
  * A set of utility methods to find the necessary JSR 308 jars and to resolve any sources/classes
@@ -25,6 +28,7 @@ import org.codehaus.plexus.util.DirectoryScanner;
  */
 public class PathUtils {
   private static final String DEFAULT_INCLUSION_PATTERN = "**/*.java";
+  private static final String CHECKER_FRAMEWORK_GROUPD_ID = "org.checkerframework";
 
   /**
    * Scans the given compile source roots for sources, taking into account the given includes and
@@ -127,19 +131,12 @@ public class PathUtils {
             .filter(
                 a ->
                     "org.checkerframework".equals(a.getGroupId())
-                        && ("checker".equals(a.getArtifactId())))
+                        && ("checker-qual".equals(a.getArtifactId())))
             .findFirst();
 
     if (artifact.isPresent()) {
-      String version = artifact.get().getVersion();
-      log.debug(
-          "Found Checker Framework version '"
-              + version
-              + "' from project dependency: "
-              + artifact.get().getArtifactId());
-      return version;
+      return artifact.get().getVersion();
     }
-
     return null;
   }
 
@@ -174,81 +171,25 @@ public class PathUtils {
     if (artifact.isPresent()) {
       File artifactFile = artifact.get().getFile();
       if (artifactFile != null && artifactFile.exists()) {
-        log.debug(
-            "Found Checker Framework artifact '"
-                + artifactId
-                + "' in project dependencies: "
-                + artifactFile.getAbsolutePath());
         return artifactFile;
       }
     }
 
     // Method 2: Resolve from local repository
     try {
-      String version =
-          checkerFrameworkVersion != null && !checkerFrameworkVersion.isEmpty()
-              ? checkerFrameworkVersion
-              : "3.53.0"; // Default version
-
       Artifact resolvedArtifact =
-          repositorySystem.createArtifact("org.checkerframework", artifactId, version, null, "jar");
+          repositorySystem.createArtifact(
+              "org.checkerframework", artifactId, checkerFrameworkVersion, null, "jar");
 
       File artifactFile =
           new File(localRepository.getBasedir(), localRepository.pathOf(resolvedArtifact));
 
       if (artifactFile.exists()) {
-        log.debug(
-            "Found Checker Framework artifact '"
-                + artifactId
-                + "' in local repository: "
-                + artifactFile.getAbsolutePath());
         return artifactFile;
-      } else {
-        log.warn(
-            "Checker Framework artifact '"
-                + artifactId
-                + "' JAR not found at: "
-                + artifactFile.getAbsolutePath());
       }
     } catch (Exception e) {
-      log.debug(
-          "Failed to resolve Checker Framework artifact '"
-              + artifactId
-              + "' from local repository: "
-              + e.getMessage());
+      // ignore
     }
-
-    // Method 3: Try to get from the class loader (backup plan, only works for "checker")
-    if ("checker".equals(artifactId)) {
-      try {
-        Class<?> checkerClass =
-            Class.forName("org.checkerframework.checker.nullness.NullnessChecker");
-        String classPath =
-            checkerClass.getProtectionDomain().getCodeSource().getLocation().getPath();
-        // Handle URL encoding and file: prefix
-        if (classPath.startsWith("file:")) {
-          classPath = classPath.substring(5);
-        }
-        // URL decode
-        classPath = URLDecoder.decode(classPath, "UTF-8");
-        File jarFile = new File(classPath);
-        if (jarFile.exists()) {
-          log.debug(
-              "Found Checker Framework artifact '"
-                  + artifactId
-                  + "' via classloader: "
-                  + jarFile.getAbsolutePath());
-          return jarFile;
-        }
-      } catch (Exception e) {
-        log.debug(
-            "Could not find Checker Framework artifact '"
-                + artifactId
-                + "' via classloader: "
-                + e.getMessage());
-      }
-    }
-
     return null;
   }
 }
