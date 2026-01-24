@@ -29,6 +29,8 @@ import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.codehaus.plexus.util.cli.Commandline;
+
 @Mojo(
     name = "check",
     defaultPhase = LifecyclePhase.PROCESS_CLASSES,
@@ -84,6 +86,10 @@ public class CheckerMojo extends AbstractMojo {
   @Parameter(property = "procOnly", defaultValue = "true")
   private boolean procOnly;
 
+  /** Whether to fail the build when Checker Framework finds errors */
+  @Parameter(property = "failOnError", defaultValue = "true")
+  private boolean failOnError;
+
   /** The Checker Framework JAR file for the checker artifact */
   private File checkerFrameworkJar;
 
@@ -96,7 +102,7 @@ public class CheckerMojo extends AbstractMojo {
   @Override
   public void execute() throws MojoExecutionException, MojoFailureException {
     final Log log = getLog();
-    if (skipCheckerFramework()) {      
+    if (skipCheckerFramework()) {
       return;
     }
 
@@ -129,33 +135,32 @@ public class CheckerMojo extends AbstractMojo {
     if (sources.isEmpty()) {
       log.info("No source files found.");
       return;
-    }  
+    }
 
     try {
       locateArtifacts();
       loadJvmVersion();
       // Prepare javac command
-      // TODO: use commandLine in codehaus
-      List<String> command = new ArrayList<>();
+      Commandline commandline = new Commandline();
 
-      concatJavacPath(command);
+      concatJavacPath(commandline);
 
-      concatClasspath(command);
+      concatClasspath(commandline);
 
-      concatProcessorPath(command);
+      concatProcessorPath(commandline);
 
-      concatAnnotationProcessor(command);
+      concatAnnotationProcessor(commandline);
 
       // only process annotations, do not generate class files (to avoid
       // overwriting compilation results)
       if (procOnly) {
-        command.add("-proc:only");
+        commandline.createArg().setValue("-proc:only");
       }
 
       // Automatically add security parameters for Java 9+ (saves you from the huge configuration in
       // pom.xml)
       if (isJava9OrLater()) {
-        addJava9Args(command);
+        addJava9Args(commandline);
       }
 
       // Collect all source files (.java)
@@ -164,32 +169,16 @@ public class CheckerMojo extends AbstractMojo {
         log.info("No source files found to check.");
         return;
       }
-      command.addAll(sourceFiles);
+      for (String sourceFile : sourceFiles) {
+        commandline.createArg().setValue(sourceFile);
+      }
 
       // Execute command
-      log.debug("Executing command: " + String.join(" ", command));
-      ProcessBuilder pb = new ProcessBuilder(command);
-      pb.redirectErrorStream(true); // Merge error output to standard output
+      String[] commandArray = commandline.getCommandline();
+      String commandString = formatCommandForLogging(commandArray);
+      log.debug("Executing command:\n" + commandString);
 
-      Process process = pb.start();
-
-      // Print javac output to Maven log
-      try (BufferedReader reader =
-          new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-        String line;
-        while ((line = reader.readLine()) != null) {
-          if (line.contains("error:")) {
-            log.error(line); // Highlight errors
-          } else {
-            log.info(line);
-          }
-        }
-      }
-
-      int exitCode = process.waitFor();
-      if (exitCode != 0) {
-        throw new MojoFailureException("Checker Framework found errors.");
-      }
+      new JavacIOExecutor(executable).executeCommandLine(commandline, log, failOnError);
 
       log.info("Checker Framework analysis completed successfully.");
 
@@ -210,11 +199,12 @@ public class CheckerMojo extends AbstractMojo {
     return false;
   }
 
-  private void concatJavacPath(List<String> command) {
-    command.add(PathUtils.getExecutablePath(executable, toolchainManager, session));
+  private void concatJavacPath(Commandline commandline) {
+    commandline.setExecutable(PathUtils.getExecutablePath(executable, toolchainManager, session));
   }
 
-  private void concatClasspath(List<String> command) throws DependencyResolutionRequiredException {
+  private void concatClasspath(Commandline commandline)
+      throws DependencyResolutionRequiredException {
     // Concatenate Classpath (dependency package path)
     List<String> classpathElements = project.getCompileClasspathElements();
 
@@ -222,11 +212,11 @@ public class CheckerMojo extends AbstractMojo {
       return;
     }
     String classpath = String.join(File.pathSeparator, classpathElements);
-    command.add("-cp");
-    command.add(classpath);
+    commandline.createArg().setValue("-cp");
+    commandline.createArg().setValue(classpath);
   }
 
-  private void concatProcessorPath(List<String> command) {
+  private void concatProcessorPath(Commandline commandline) {
     final Log log = getLog();
     if (checkerFrameworkJar == null || checkerQualJar == null) {
       log.error("Could not find Checker Framework JARs");
@@ -236,16 +226,16 @@ public class CheckerMojo extends AbstractMojo {
         checkerFrameworkJar.getAbsolutePath()
             + File.pathSeparator
             + checkerQualJar.getAbsolutePath();
-    command.add("-processorpath");
-    command.add(ProcessorPath);
+    commandline.createArg().setValue("-processorpath");
+    commandline.createArg().setValue(ProcessorPath);
   }
 
-  private void concatAnnotationProcessor(List<String> command) {
+  private void concatAnnotationProcessor(Commandline commandline) {
     if (annotationProcessors == null || annotationProcessors.isEmpty()) {
       return;
     }
-    command.add("-processor");
-    command.add(String.join(",", annotationProcessors));
+    commandline.createArg().setValue("-processor");
+    commandline.createArg().setValue(String.join(",", annotationProcessors));
   }
 
   private List<String> getAllJavaSourceFiles(List<String> sources) throws IOException {
@@ -270,7 +260,7 @@ public class CheckerMojo extends AbstractMojo {
     return javaVersionNumber >= 9;
   }
 
-  private void addJava9Args(List<String> command) {
+  private void addJava9Args(Commandline commandline) {
     String[] exports = {
       "jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
       "jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
@@ -283,9 +273,11 @@ public class CheckerMojo extends AbstractMojo {
       "jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED"
     };
     for (String export : exports) {
-      command.add("-J--add-exports=" + export);
+      commandline.createArg().setValue("-J--add-exports=" + export);
     }
-    command.add("-J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED");
+    commandline
+        .createArg()
+        .setValue("-J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED");
   }
 
   /**
@@ -306,13 +298,41 @@ public class CheckerMojo extends AbstractMojo {
             checkerFrameworkVersion,
             log);
   }
+
   private void loadJvmVersion() throws MojoFailureException {
-    // Get Java version number from Toolchain (preferred), Maven project configuration, or system property
-    javaVersionNumber =
-        PathUtils.getJavaVersionNumber(toolchainManager, session, project);
+    // Get Java version number from Toolchain (preferred), Maven project configuration, or system
+    // property
+    javaVersionNumber = PathUtils.getJavaVersionNumber(toolchainManager, session, project);
     if (javaVersionNumber < 8) {
       getLog().error("Java version must be at least 8");
       throw new MojoFailureException("Java version must be at least 8");
     }
+  }
+
+  /**
+   * Formats a command array into a multi-line string with backslash continuation, making it easy to
+   * read and copy-paste into a terminal.
+   *
+   * @param commandArray The command array to format
+   * @return A formatted multi-line string that can be directly executed in a terminal
+   */
+  private String formatCommandForLogging(String[] commandArray) {
+    if (commandArray == null || commandArray.length == 0) {
+      return "";
+    }
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < commandArray.length; i++) {
+      String arg = commandArray[i];
+      // Escape spaces and special characters if needed
+      if (arg.contains(" ") || arg.contains("\"") || arg.contains("'")) {
+        arg = "\"" + arg.replace("\"", "\\\"") + "\"";
+      }
+      sb.append(arg);
+      // Add backslash continuation for all but the last argument
+      if (i < commandArray.length - 1) {
+        sb.append(" \\\n  ");
+      }
+    }
+    return sb.toString();
   }
 }
