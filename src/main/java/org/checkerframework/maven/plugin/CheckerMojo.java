@@ -90,6 +90,9 @@ public class CheckerMojo extends AbstractMojo {
   /** The Checker Framework JAR file for the checker-qual artifact */
   private File checkerQualJar;
 
+  /** The Java major version number (e.g., 8 for Java 1.8, 9 for Java 9, 11 for Java 11) */
+  private int javaVersionNumber;
+
   @Override
   public void execute() throws MojoExecutionException, MojoFailureException {
     final Log log = getLog();
@@ -126,11 +129,11 @@ public class CheckerMojo extends AbstractMojo {
     if (sources.isEmpty()) {
       log.info("No source files found.");
       return;
-    }
-
-    locateArtifacts();
+    }  
 
     try {
+      locateArtifacts();
+      loadJvmVersion();
       // Prepare javac command
       // TODO: use commandLine in codehaus
       List<String> command = new ArrayList<>();
@@ -263,10 +266,8 @@ public class CheckerMojo extends AbstractMojo {
   }
 
   private boolean isJava9OrLater() {
-    // TODO: get jvm version with a more proper way
-    String version = System.getProperty("java.version");
-    return !version.startsWith(
-        "1."); // Before 1.8, it starts with 1., after 9, it is directly 9, 11, 21...
+    // Java 9 and later have version number >= 9
+    return javaVersionNumber >= 9;
   }
 
   private void addJava9Args(List<String> command) {
@@ -304,5 +305,14 @@ public class CheckerMojo extends AbstractMojo {
             localRepository,
             checkerFrameworkVersion,
             log);
+  }
+  private void loadJvmVersion() throws MojoFailureException {
+    // Get Java version number from Toolchain (preferred), Maven project configuration, or system property
+    javaVersionNumber =
+        PathUtils.getJavaVersionNumber(toolchainManager, session, project);
+    if (javaVersionNumber < 8) {
+      getLog().error("Java version must be at least 8");
+      throw new MojoFailureException("Java version must be at least 8");
+    }
   }
 }
