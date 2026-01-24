@@ -25,9 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -80,23 +78,6 @@ public class CheckerMojo extends AbstractMojo {
   private String executable;
 
   /**
-   * A list of inclusion filters for the compiler. When CheckersMojo scans the
-   * "${compileSourceRoot}" directory for files it will only include those files that match one of
-   * the specified inclusion patterns. If no patterns are included then
-   * PathUtils.DEFAULT_INCLUSION_PATTERN is used
-   */
-  @Parameter(property = "includes")
-  private final Set<String> includes = new HashSet<>();
-
-  /**
-   * A list of exclusion filters for the compiler. When CheckersMojo scans the
-   * "${compileSourceRoot}" directory for files it will only include those file that DO NOT match
-   * any of the specified exclusion patterns.
-   */
-  @Parameter(property = "excludes")
-  private final Set<String> excludes = new HashSet<>();
-
-  /**
    * Whether to only process annotations, do not generate class files (to avoid overwriting
    * compilation results)
    */
@@ -112,11 +93,7 @@ public class CheckerMojo extends AbstractMojo {
   @Override
   public void execute() throws MojoExecutionException, MojoFailureException {
     final Log log = getLog();
-    if (skip) {
-      log.info("Execution is skipped");
-      return;
-    } else if ("pom".equals(project.getPackaging())) {
-      log.info("Execution is skipped for project with packaging 'pom'");
+    if (skipCheckerFramework()) {      
       return;
     }
 
@@ -135,7 +112,7 @@ public class CheckerMojo extends AbstractMojo {
     // Priority: 1. Explicitly configured version 2. Version from project dependencies 3. Default
     // version
     if (checkerFrameworkVersion == null || checkerFrameworkVersion.isEmpty()) {
-      String versionFromDeps = PathUtils.getCheckerFrameworkVersionFromDependencies(project, log);
+      String versionFromDeps = PathUtils.getCheckerFrameworkVersionFromDependencies(project);
       if (versionFromDeps != null && !versionFromDeps.isEmpty()) {
         checkerFrameworkVersion = versionFromDeps;
       } else {
@@ -144,11 +121,8 @@ public class CheckerMojo extends AbstractMojo {
     }
 
     log.info("Starting Checker Framework analysis with version: " + checkerFrameworkVersion);
-    // TODO: fix it
-    //    final List<String> sources = PathUtils.scanForSources(compileSourceRoots, includes,
-    // excludes);
-    final List<String> sources = project.getCompileSourceRoots();
 
+    final List<String> sources = project.getCompileSourceRoots();
     if (sources.isEmpty()) {
       log.info("No source files found.");
       return;
@@ -221,7 +195,17 @@ public class CheckerMojo extends AbstractMojo {
     }
   }
 
-  // --- Helper methods ---
+  private boolean skipCheckerFramework() {
+    final Log log = getLog();
+    if (skip) {
+      log.info("Execution is skipped");
+      return true;
+    } else if ("pom".equals(project.getPackaging())) {
+      log.info("Execution is skipped for project with packaging 'pom'");
+      return true;
+    }
+    return false;
+  }
 
   private void concatJavacPath(List<String> command) {
     command.add(PathUtils.getExecutablePath(executable, toolchainManager, session));
@@ -279,6 +263,7 @@ public class CheckerMojo extends AbstractMojo {
   }
 
   private boolean isJava9OrLater() {
+    // TODO: get jvm version with a more proper way
     String version = System.getProperty("java.version");
     return !version.startsWith(
         "1."); // Before 1.8, it starts with 1., after 9, it is directly 9, 11, 21...
