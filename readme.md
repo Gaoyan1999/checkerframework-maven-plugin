@@ -14,7 +14,7 @@ Add the following to your `pom.xml` file:
     <plugin>
       <groupId>org.checkerframework</groupId>
       <artifactId>checkerframework-maven-plugin</artifactId>
-      <version>1.0-SNAPSHOT</version>
+      <version>1.0.0</version>
       <configuration>
         <annotationProcessors>
           <annotationProcessor>org.checkerframework.checker.nullness.NullnessChecker</annotationProcessor>
@@ -46,7 +46,7 @@ For example:
 <plugin>
   <groupId>org.checkerframework</groupId>
   <artifactId>checkerframework-maven-plugin</artifactId>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.0.0</version>
   <configuration>
     <annotationProcessors>
       <annotationProcessor>org.checkerframework.checker.nullness.NullnessChecker</annotationProcessor>      
@@ -221,7 +221,7 @@ Here is a complete example `pom.xml` showing how to use the plugin:
 
   <groupId>com.example</groupId>
   <artifactId>my-project</artifactId>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.0.0</version>
 
   <properties>
     <maven.compiler.source>11</maven.compiler.source>
@@ -242,7 +242,7 @@ Here is a complete example `pom.xml` showing how to use the plugin:
       <plugin>
         <groupId>org.checkerframework</groupId>
         <artifactId>checkerframework-maven-plugin</artifactId>
-        <version>1.0-SNAPSHOT</version>
+        <version>1.0.0</version>
         <configuration>
           <annotationProcessors>
             <annotationProcessor>org.checkerframework.checker.nullness.NullnessChecker</annotationProcessor>            
