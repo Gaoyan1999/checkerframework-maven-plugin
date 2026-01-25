@@ -139,6 +139,8 @@ public class CheckerMojo extends AbstractMojo {
       return;
     }
 
+    File srcFofn = null;
+    File cpFofn = null;
     try {
       locateArtifacts();
       loadJvmVersion();
@@ -147,7 +149,12 @@ public class CheckerMojo extends AbstractMojo {
 
       concatJavacPath(commandline);
 
-      concatClasspath(commandline);
+      // Get classpath string for file-based argument
+      String classpath = getClasspathString();
+      if (classpath != null && !classpath.isEmpty()) {
+        cpFofn = PluginUtil.writeTmpCpFile("CFPlugin-maven-cp", true, classpath);
+        commandline.createArg().setValue(PluginUtil.fileArgToStr(cpFofn));
+      }
 
       concatProcessorPath(commandline);
 
@@ -171,9 +178,10 @@ public class CheckerMojo extends AbstractMojo {
         log.info("No source files found to check.");
         return;
       }
-      for (String sourceFile : sourceFiles) {
-        commandline.createArg().setValue(sourceFile);
-      }
+      
+      // Write source files to temporary file and use @file syntax
+      srcFofn = PluginUtil.writeTmpSrcFofn("CFPlugin-maven-src", true, sourceFiles);
+      commandline.createArg().setValue(PluginUtil.fileArgToStr(srcFofn));
 
       // Execute command
       String[] commandArray = commandline.getCommandline();
@@ -186,6 +194,14 @@ public class CheckerMojo extends AbstractMojo {
 
     } catch (Exception e) {
       throw new MojoExecutionException("Error running Checker Framework", e);
+    } finally {
+      // Clean up temporary files
+      if (srcFofn != null && srcFofn.exists()) {
+        srcFofn.delete();
+      }
+      if (cpFofn != null && cpFofn.exists()) {
+        cpFofn.delete();
+      }
     }
   }
 
@@ -222,8 +238,11 @@ public class CheckerMojo extends AbstractMojo {
     commandline.setExecutable(PathUtils.getExecutablePath(executable, toolchainManager, session));
   }
 
-  private void concatClasspath(Commandline commandline)
-      throws DependencyResolutionRequiredException {
+  /**
+   * Gets the classpath string for the current project configuration.
+   * Returns null if classpath is empty.
+   */
+  private String getClasspathString() throws DependencyResolutionRequiredException {
     // Concatenate Classpath (dependency package path)
     // If we're checking test sources, use test classpath; otherwise use compile classpath
     List<String> classpathElements;
@@ -244,11 +263,9 @@ public class CheckerMojo extends AbstractMojo {
     }
 
     if (classpathElements.isEmpty()) {
-      return;
+      return null;
     }
-    String classpath = String.join(File.pathSeparator, classpathElements);
-    commandline.createArg().setValue("-cp");
-    commandline.createArg().setValue(classpath);
+    return String.join(File.pathSeparator, classpathElements);
   }
 
   private void concatProcessorPath(Commandline commandline) {
