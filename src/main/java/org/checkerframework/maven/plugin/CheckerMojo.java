@@ -17,10 +17,8 @@ import org.apache.maven.repository.RepositorySystem;
 import org.apache.maven.artifact.repository.ArtifactRepository;
 import org.apache.maven.toolchain.ToolchainManager;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -34,7 +32,7 @@ import org.codehaus.plexus.util.cli.Commandline;
 @Mojo(
     name = "check",
     defaultPhase = LifecyclePhase.PROCESS_CLASSES,
-    requiresDependencyResolution = ResolutionScope.COMPILE,
+    requiresDependencyResolution = ResolutionScope.TEST,
     threadSafe = true)
 public class CheckerMojo extends AbstractMojo {
 
@@ -90,6 +88,10 @@ public class CheckerMojo extends AbstractMojo {
   @Parameter(property = "failOnError", defaultValue = "true")
   private boolean failOnError;
 
+  /** Whether to exclude test sources from checking */
+  @Parameter(property = "excludeTests", defaultValue = "false")
+  private boolean excludeTests;
+
   /** The Checker Framework JAR file for the checker artifact */
   private File checkerFrameworkJar;
 
@@ -131,7 +133,7 @@ public class CheckerMojo extends AbstractMojo {
 
     log.info("Starting Checker Framework analysis with version: " + checkerFrameworkVersion);
 
-    final List<String> sources = project.getCompileSourceRoots();
+    final List<String> sources = collectSourceRoots();
     if (sources.isEmpty()) {
       log.info("No source files found.");
       return;
@@ -199,6 +201,23 @@ public class CheckerMojo extends AbstractMojo {
     return false;
   }
 
+  /**
+   * Collects source roots for checking. Includes both main and test sources unless
+   * excludeTests is true.
+   *
+   * @return List of source root directories
+   */
+  private List<String> collectSourceRoots() {
+    final Log log = getLog();
+    final List<String> sources = new ArrayList<>(project.getCompileSourceRoots());
+    if (!excludeTests) {
+      sources.addAll(project.getTestCompileSourceRoots());
+    } else {
+      log.info("Excluding test sources from checking.");
+    }
+    return sources;
+  }
+
   private void concatJavacPath(Commandline commandline) {
     commandline.setExecutable(PathUtils.getExecutablePath(executable, toolchainManager, session));
   }
@@ -206,7 +225,23 @@ public class CheckerMojo extends AbstractMojo {
   private void concatClasspath(Commandline commandline)
       throws DependencyResolutionRequiredException {
     // Concatenate Classpath (dependency package path)
-    List<String> classpathElements = project.getCompileClasspathElements();
+    // If we're checking test sources, use test classpath; otherwise use compile classpath
+    List<String> classpathElements;
+    boolean hasTestSources = !project.getTestCompileSourceRoots().isEmpty();
+    
+    if (!excludeTests && hasTestSources) {
+      // If we have test sources and not excluding them, use test classpath
+      // which includes both compile and test dependencies
+      try {
+        classpathElements = project.getTestClasspathElements();
+      } catch (DependencyResolutionRequiredException e) {
+        // Fallback to compile classpath if test classpath is not available
+        classpathElements = project.getCompileClasspathElements();
+      }
+    } else {
+      // Only checking main sources, use compile classpath
+      classpathElements = project.getCompileClasspathElements();
+    }
 
     if (classpathElements.isEmpty()) {
       return;
