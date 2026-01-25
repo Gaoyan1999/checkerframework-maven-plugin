@@ -92,6 +92,10 @@ public class CheckerMojo extends AbstractMojo {
   @Parameter(property = "excludeTests", defaultValue = "false")
   private boolean excludeTests;
 
+  /** Additional javac arguments to pass to the compiler */
+  @Parameter(property = "extraJavacArgs")
+  private List<String> extraJavacArgs;
+
   /** The Checker Framework JAR file for the checker artifact */
   private File checkerFrameworkJar;
 
@@ -171,6 +175,8 @@ public class CheckerMojo extends AbstractMojo {
       if (isJava9OrLater()) {
         addJava9Args(commandline);
       }
+
+      concatExtraJavacArgs(commandline);
 
       // Collect all source files (.java)
       List<String> sourceFiles = getAllJavaSourceFiles(sources);
@@ -288,6 +294,14 @@ public class CheckerMojo extends AbstractMojo {
     }
     commandline.createArg().setValue("-processor");
     commandline.createArg().setValue(String.join(",", annotationProcessors));
+  }
+
+  private void concatExtraJavacArgs(Commandline commandline) {
+    if (extraJavacArgs != null && !extraJavacArgs.isEmpty()) {
+      for (String arg : extraJavacArgs) {
+        commandline.createArg().setValue(arg);
+      }
+    }
   }
 
   private List<String> getAllJavaSourceFiles(List<String> sources) throws IOException {
