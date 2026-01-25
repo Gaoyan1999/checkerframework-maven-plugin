@@ -8,14 +8,14 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Utility class for creating temporary files used with javac's @file syntax.
- * This helps avoid command line length limits when passing many source files or long classpaths.
+ * Utility class for creating temporary files used with javac's @file syntax. This helps avoid
+ * command line length limits when passing many source files or long classpaths.
  */
 public class PluginUtil {
 
   /**
-   * Writes a list of source file paths to a temporary file (File Of File Names - FOFN).
-   * Each file path is written on a separate line as an absolute path.
+   * Writes a list of source file paths to a temporary file (File Of File Names - FOFN). Each file
+   * path is written on a separate line as an absolute path.
    *
    * @param prefix The prefix for the temporary file name
    * @param deleteOnExit Whether to delete the file on JVM exit
@@ -40,8 +40,8 @@ public class PluginUtil {
   }
 
   /**
-   * Writes classpath to a temporary file in the format expected by javac's @file syntax.
-   * The file contains: -cp "classpath_string"
+   * Writes classpath to a temporary file in the format expected by javac's @file syntax. The file
+   * contains: -cp "classpath_string"
    *
    * @param prefix The prefix for the temporary file name
    * @param deleteOnExit Whether to delete the file on JVM exit
@@ -95,5 +95,28 @@ public class PluginUtil {
    */
   private static String escapeQuotes(String toEscape) {
     return toEscape.replace("\"", "\\\"");
+  }
+
+  /**
+   * Parses a version string (e.g., "3.53.0") and extracts the major and minor version numbers.
+   *
+   * @param versionString The version string to parse
+   * @return An array of two integers: [majorVersion, minorVersion], or null if parsing fails
+   */
+  public static int[] parseVersion(String versionString) {
+    if (versionString == null || versionString.isEmpty()) {
+      return null;
+    }
+    try {
+      String[] versionParts = versionString.split("\\.");
+      if (versionParts.length >= 2) {
+        int majorVersion = Integer.parseInt(versionParts[0]);
+        int minorVersion = Integer.parseInt(versionParts[1]);
+        return new int[] {majorVersion, minorVersion};
+      }
+    } catch (NumberFormatException e) {
+      // Return null if parsing fails
+    }
+    return null;
   }
 }
