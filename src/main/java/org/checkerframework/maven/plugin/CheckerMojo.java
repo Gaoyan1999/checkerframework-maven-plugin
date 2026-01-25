@@ -74,7 +74,7 @@ public class CheckerMojo extends AbstractMojo {
   @Parameter(property = "skip", defaultValue = "false")
   private boolean skip;
 
-  @Parameter(property = "executable", defaultValue = "javac")
+  @Parameter(property = "executable", defaultValue = "java")
   private String executable;
 
   /**
@@ -148,12 +148,24 @@ public class CheckerMojo extends AbstractMojo {
     try {
       locateArtifacts();
       loadJvmVersion();
-      // Prepare javac command
+      // Prepare java command (using com.sun.tools.javac.Main)
       Commandline commandline = new Commandline();
 
-      concatJavacPath(commandline);
+      concatJavaPath(commandline);
 
-      // Get classpath string for file-based argument
+      // Automatically add security parameters for Java 9+ (saves you from the huge configuration in
+      // pom.xml)
+      if (isJava9OrLater()) {
+        addJava9Args(commandline);
+      }
+
+      // Add -cp for checker framework jars (needed for java command)
+      concatCheckerFrameworkClasspath(commandline);
+
+      // Add main class
+      commandline.createArg().setValue("com.sun.tools.javac.Main");
+
+      // Get classpath string for file-based argument (for javac)
       String classpath = getClasspathString();
       if (classpath != null && !classpath.isEmpty()) {
         cpFofn = PluginUtil.writeTmpCpFile("CFPlugin-maven-cp", true, classpath);
@@ -168,12 +180,6 @@ public class CheckerMojo extends AbstractMojo {
       // overwriting compilation results)
       if (procOnly) {
         commandline.createArg().setValue("-proc:only");
-      }
-
-      // Automatically add security parameters for Java 9+ (saves you from the huge configuration in
-      // pom.xml)
-      if (isJava9OrLater()) {
-        addJava9Args(commandline);
       }
 
       concatExtraJavacArgs(commandline);
@@ -192,7 +198,7 @@ public class CheckerMojo extends AbstractMojo {
       // Execute command
       String[] commandArray = commandline.getCommandline();
       String commandString = formatCommandForLogging(commandArray);
-      log.debug("Executing command:\n" + commandString);
+      log.info("Executing command:\n" + commandString);
 
       new JavacIOExecutor(executable).executeCommandLine(commandline, log, failOnError);
 
@@ -240,7 +246,7 @@ public class CheckerMojo extends AbstractMojo {
     return sources;
   }
 
-  private void concatJavacPath(Commandline commandline) {
+  private void concatJavaPath(Commandline commandline) {
     commandline.setExecutable(PathUtils.getExecutablePath(executable, toolchainManager, session));
   }
 
@@ -339,11 +345,29 @@ public class CheckerMojo extends AbstractMojo {
       "jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED"
     };
     for (String export : exports) {
-      commandline.createArg().setValue("-J--add-exports=" + export);
+      commandline.createArg().setValue("--add-exports=" + export);
     }
     commandline
         .createArg()
-        .setValue("-J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED");
+        .setValue("--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED");
+  }
+
+  /**
+   * Adds the Checker Framework JARs to the classpath for the java command.
+   * This is needed when using java command instead of javac.
+   */
+  private void concatCheckerFrameworkClasspath(Commandline commandline) {
+    final Log log = getLog();
+    if (checkerFrameworkJar == null || checkerQualJar == null) {
+      log.error("Could not find Checker Framework JARs");
+      return;
+    }
+    final String checkerClasspath =
+        checkerFrameworkJar.getAbsolutePath()
+            + File.pathSeparator
+            + checkerQualJar.getAbsolutePath();
+    commandline.createArg().setValue("-cp");
+    commandline.createArg().setValue(checkerClasspath);
   }
 
   /**
