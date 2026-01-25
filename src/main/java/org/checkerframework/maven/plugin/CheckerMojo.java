@@ -102,8 +102,17 @@ public class CheckerMojo extends AbstractMojo {
   /** The Checker Framework JAR file for the checker-qual artifact */
   private File checkerQualJar;
 
-  /** The Java major version number (e.g., 8 for Java 1.8, 9 for Java 9, 11 for Java 11) */
-  private int javaVersionNumber;
+  /**
+   * The Java source major version number that configured in the project (e.g., 8 for Java 1.8, 9
+   * for Java 9, 11 for Java 11)
+   */
+  private int javaSourceVersionNumber;
+
+  /**
+   * The actual JVM major version number that is running the Maven build (e.g., 8 for Java 1.8, 9
+   * for Java 9, 11 for Java 11)
+   */
+  private int jvmVersionNumber;
 
   @Override
   public void execute() throws MojoExecutionException, MojoFailureException {
@@ -124,7 +133,8 @@ public class CheckerMojo extends AbstractMojo {
     }
 
     // Determine Checker Framework version
-    // Priority: 1. Explicitly configured version 2. Version from project dependencies 3. Default
+    // Priority: 1. Explicitly configured version 2. Version from project
+    // dependencies 3. Default
     // version
     if (checkerFrameworkVersion == null || checkerFrameworkVersion.isEmpty()) {
       String versionFromDeps = PathUtils.getCheckerFrameworkVersionFromDependencies(project);
@@ -147,17 +157,22 @@ public class CheckerMojo extends AbstractMojo {
     File cpFofn = null;
     try {
       locateArtifacts();
-      loadJvmVersion();
-      // Prepare java command (using com.sun.tools.javac.Main)
+      loadJavaSourceVersionAndJvmVersion();
+
+      // Prepare javac command
       Commandline commandline = new Commandline();
 
       concatJavaPath(commandline);
 
-      // Automatically add security parameters for Java 9+ (saves you from the huge configuration in
+      // Automatically add security parameters for Java 9+ (saves you from the huge
+      // configuration in
       // pom.xml)
       if (isJava9OrLater()) {
         addJava9Args(commandline);
       }
+
+      // Add Error Prone javac on demand if needed
+      addErrorProneJavacOnDemand(commandline);
 
       // Add -cp for checker framework jars (needed for java command)
       concatCheckerFrameworkClasspath(commandline);
@@ -190,7 +205,7 @@ public class CheckerMojo extends AbstractMojo {
         log.info("No source files found to check.");
         return;
       }
-      
+
       // Write source files to temporary file and use @file syntax
       srcFofn = PluginUtil.writeTmpSrcFofn("CFPlugin-maven-src", true, sourceFiles);
       commandline.createArg().setValue(PluginUtil.fileArgToStr(srcFofn));
@@ -198,7 +213,7 @@ public class CheckerMojo extends AbstractMojo {
       // Execute command
       String[] commandArray = commandline.getCommandline();
       String commandString = formatCommandForLogging(commandArray);
-      log.info("Executing command:\n" + commandString);
+      log.debug("Executing command:\n" + commandString);
 
       new JavacIOExecutor(executable).executeCommandLine(commandline, log, failOnError);
 
@@ -230,8 +245,8 @@ public class CheckerMojo extends AbstractMojo {
   }
 
   /**
-   * Collects source roots for checking. Includes both main and test sources unless
-   * excludeTests is true.
+   * Collects source roots for checking. Includes both main and test sources unless excludeTests is
+   * true.
    *
    * @return List of source root directories
    */
@@ -251,15 +266,16 @@ public class CheckerMojo extends AbstractMojo {
   }
 
   /**
-   * Gets the classpath string for the current project configuration.
-   * Returns null if classpath is empty.
+   * Gets the classpath string for the current project configuration. Returns null if classpath is
+   * empty.
    */
   private String getClasspathString() throws DependencyResolutionRequiredException {
     // Concatenate Classpath (dependency package path)
-    // If we're checking test sources, use test classpath; otherwise use compile classpath
+    // If we're checking test sources, use test classpath; otherwise use compile
+    // classpath
     List<String> classpathElements;
     boolean hasTestSources = !project.getTestCompileSourceRoots().isEmpty();
-    
+
     if (!excludeTests && hasTestSources) {
       // If we have test sources and not excluding them, use test classpath
       // which includes both compile and test dependencies
@@ -329,7 +345,7 @@ public class CheckerMojo extends AbstractMojo {
 
   private boolean isJava9OrLater() {
     // Java 9 and later have version number >= 9
-    return javaVersionNumber >= 9;
+    return javaSourceVersionNumber >= 9;
   }
 
   private void addJava9Args(Commandline commandline) {
@@ -353,8 +369,49 @@ public class CheckerMojo extends AbstractMojo {
   }
 
   /**
-   * Adds the Checker Framework JARs to the classpath for the java command.
-   * This is needed when using java command instead of javac.
+   * Adds Error Prone javac to the command line on demand. This is required when running Java 8 code
+   * on Java 8 JVM with Checker Framework >= 3.0 or Checker Framework >= 2.11.
+   *
+   * @param commandline The command line to add Error Prone javac to
+   */
+  private void addErrorProneJavacOnDemand(Commandline commandline) {
+    if (jvmVersionNumber != 8 || javaSourceVersionNumber != 8) {
+      return;
+    }
+    final Log log = getLog();
+    boolean needErrorProneJavac = false;
+    int[] version = PluginUtil.parseVersion(checkerFrameworkVersion);
+    if (version == null) {
+      // If version is not available, default to requiring Error Prone javac
+      needErrorProneJavac = true;
+      log.warn(
+          "Checker Framework version not available, defaulting to requiring Error Prone javac");
+    } else {
+      // Check if Error Prone javac is needed based on version
+      // Error Prone javac is needed for CF >= 3.0 or (CF == 2.x && minor >= 11)
+      int majorVersion = version[0];
+      int minorVersion = version[1];
+      needErrorProneJavac = majorVersion >= 3 || (majorVersion == 2 && minorVersion >= 11);
+    }
+
+    if (!needErrorProneJavac) {
+      return;
+    }
+
+    File errorProneJavacJar =
+        PathUtils.getErrorProneJavacJar(project, repositorySystem, localRepository, session, log);
+    if (errorProneJavacJar != null && errorProneJavacJar.exists()) {
+      String errorProneJavacPath = errorProneJavacJar.getAbsolutePath();
+      commandline.createArg().setValue("-Xbootclasspath/p:" + errorProneJavacPath);
+    } else {
+      log.warn(
+          "Error Prone javac JAR is required but not found. The Checker Framework may not work correctly on Java 8.");
+    }
+  }
+
+  /**
+   * Adds the Checker Framework JARs to the classpath for the java command. This is needed when
+   * using java command instead of javac.
    */
   private void concatCheckerFrameworkClasspath(Commandline commandline) {
     final Log log = getLog();
@@ -372,30 +429,45 @@ public class CheckerMojo extends AbstractMojo {
 
   /**
    * Locate the Checker Framework JAR files for the checker and checker-qual artifacts. The priority
-   * is 1. From project dependencies 2. From local repository
+   * is 1. From project dependencies 2. From local repository 3. From remote repositories
    */
   private void locateArtifacts() {
     final Log log = getLog();
     checkerFrameworkJar =
         PathUtils.getFrameworkJar(
-            "checker", project, repositorySystem, localRepository, checkerFrameworkVersion, log);
+            "checker",
+            project,
+            repositorySystem,
+            localRepository,
+            session,
+            checkerFrameworkVersion,
+            log);
     checkerQualJar =
         PathUtils.getFrameworkJar(
             "checker-qual",
             project,
             repositorySystem,
             localRepository,
+            session,
             checkerFrameworkVersion,
             log);
   }
 
-  private void loadJvmVersion() throws MojoFailureException {
-    // Get Java version number from Toolchain (preferred), Maven project configuration, or system
-    // property
-    javaVersionNumber = PathUtils.getJavaVersionNumber(toolchainManager, session, project);
-    if (javaVersionNumber < 8) {
-      getLog().error("Java version must be at least 8");
-      throw new MojoFailureException("Java version must be at least 8");
+  private void loadJavaSourceVersionAndJvmVersion() throws MojoFailureException {
+    // Get Java source version number from pom.xml configuration
+    // (maven.compiler.source/target)
+    javaSourceVersionNumber = PathUtils.getJavaSourceVersionNumber(project);
+    if (javaSourceVersionNumber < 8) {
+      getLog().error("Java source version must be at least 8");
+      throw new MojoFailureException("Java source version must be at least 8");
+    }
+
+    // Get actual JVM version number that is running the Maven build
+    // Priority: 1. From Toolchain 2. From system property
+    jvmVersionNumber = PathUtils.getJvmVersionNumber(toolchainManager, session);
+    if (jvmVersionNumber < 8) {
+      getLog().error("JVM version must be at least 8");
+      throw new MojoFailureException("JVM version must be at least 8");
     }
   }
 
