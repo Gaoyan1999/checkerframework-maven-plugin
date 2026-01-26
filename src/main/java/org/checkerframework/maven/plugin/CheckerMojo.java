@@ -345,7 +345,7 @@ public class CheckerMojo extends AbstractMojo {
 
   private boolean isJava9OrLater() {
     // Java 9 and later have version number >= 9
-    return javaSourceVersionNumber >= 9;
+    return jvmVersionNumber >= 9;
   }
 
   private void addJava9Args(Commandline commandline) {
