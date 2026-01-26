@@ -439,4 +439,29 @@ public class PathUtils {
         session,
         log);
   }
+
+  /**
+   * Gets the annotated JDK JAR file (jdk8) for Checker Framework. This is required for certain
+   * Checker Framework versions when running on Java 8. First tries to find it from project
+   * dependencies, then from local repository, and finally downloads it from remote repositories if
+   * needed.
+   *
+   * @param project The Maven project
+   * @param repositorySystem The repository system for resolving artifacts
+   * @param localRepository The local repository
+   * @param session The Maven session for accessing remote repositories
+   * @param checkerFrameworkVersion The Checker Framework version
+   * @param log The logger
+   * @return The JAR file, or null if not found
+   */
+  public static File getAnnotatedJdkJar(
+      final MavenProject project,
+      final RepositorySystem repositorySystem,
+      final ArtifactRepository localRepository,
+      final MavenSession session,
+      final String checkerFrameworkVersion,
+      final Log log) {
+    return getFrameworkJar(
+        "jdk8", project, repositorySystem, localRepository, session, checkerFrameworkVersion, log);
+  }
 }
