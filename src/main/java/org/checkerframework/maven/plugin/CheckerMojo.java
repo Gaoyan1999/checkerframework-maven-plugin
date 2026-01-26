@@ -102,6 +102,9 @@ public class CheckerMojo extends AbstractMojo {
   /** The Checker Framework JAR file for the checker-qual artifact */
   private File checkerQualJar;
 
+  /** The annotated JDK JAR file (jdk8) for Checker Framework */
+  private File annotatedJdkJar;
+
   /**
    * The Java source major version number that configured in the project (e.g., 8 for Java 1.8, 9
    * for Java 9, 11 for Java 11)
@@ -156,8 +159,9 @@ public class CheckerMojo extends AbstractMojo {
     File srcFofn = null;
     File cpFofn = null;
     try {
-      locateArtifacts();
+      // Load Java version information first, as it's needed for determining which artifacts to locate
       loadJavaSourceVersionAndJvmVersion();
+      locateArtifacts();
 
       // Prepare javac command
       Commandline commandline = new Commandline();
@@ -186,6 +190,10 @@ public class CheckerMojo extends AbstractMojo {
         cpFofn = PluginUtil.writeTmpCpFile("CFPlugin-maven-cp", true, classpath);
         commandline.createArg().setValue(PluginUtil.fileArgToStr(cpFofn));
       }
+
+      // Add annotated JDK to bootclasspath if needed (for Java 8 with certain CF versions)
+      // This must be added BEFORE -processorpath and -processor so Checker Framework can detect it
+      addAnnotatedJdkOnDemand(commandline);
 
       concatProcessorPath(commandline);
 
@@ -369,6 +377,55 @@ public class CheckerMojo extends AbstractMojo {
   }
 
   /**
+   * Checks if annotated JDK is needed based on Java version and Checker Framework version.
+   * Annotated JDK is required for Java 8 when Checker Framework version <= 3.3.
+   *
+   * @return true if annotated JDK is needed, false otherwise
+   */
+  private boolean needsAnnotatedJdk() {    
+    // Only needed for Java 8
+    if (jvmVersionNumber != 8 || javaSourceVersionNumber != 8) {
+      return false;
+    }
+
+    int[] version = PluginUtil.parseVersion(checkerFrameworkVersion);
+    if (version == null) {
+      // If version is not available, default to not requiring annotated JDK
+      // (most recent CF versions don't need it)
+      return false;
+    }
+
+    // Annotated JDK is needed for CF version <= 3.3
+    // i.e., major < 3 or (major == 3 && minor <= 3)
+    int majorVersion = version[0];
+    int minorVersion = version[1];
+    return majorVersion < 3 || (majorVersion == 3 && minorVersion <= 3);
+  }
+
+  /**
+   * Adds annotated JDK to the command line on demand. This is required when running Java 8 code
+   * on Java 8 JVM with Checker Framework <= 3.3.
+   *
+   * @param commandline The command line to add annotated JDK to
+   */
+  private void addAnnotatedJdkOnDemand(Commandline commandline) {
+    if (!needsAnnotatedJdk()) {
+      return;
+    }
+
+    final Log log = getLog();
+    if (annotatedJdkJar != null && annotatedJdkJar.exists()) {
+      String annotatedJdkPath = annotatedJdkJar.getAbsolutePath();
+      // Note: -Xbootclasspath/p is a compiler argument, not a JVM argument
+      commandline.createArg().setValue("-Xbootclasspath/p:" + annotatedJdkPath);
+      log.debug("Added annotated JDK to bootclasspath: " + annotatedJdkPath);
+    } else {
+      log.warn(
+          "Annotated JDK (jdk8) is required but not found. The Checker Framework may not work correctly on Java 8.");
+    }
+  }
+
+  /**
    * Adds Error Prone javac to the command line on demand. This is required when running Java 8 code
    * on Java 8 JVM with Checker Framework >= 3.0 or Checker Framework >= 2.11.
    *
@@ -451,6 +508,22 @@ public class CheckerMojo extends AbstractMojo {
             session,
             checkerFrameworkVersion,
             log);
+
+    // Locate annotated JDK if needed (for Java 8 with certain CF versions)
+    if (needsAnnotatedJdk()) {
+      annotatedJdkJar =
+          PathUtils.getAnnotatedJdkJar(
+              project,
+              repositorySystem,
+              localRepository,
+              session,
+              checkerFrameworkVersion,
+              log);
+      if (annotatedJdkJar == null || !annotatedJdkJar.exists()) {
+        log.warn(
+            "Annotated JDK (jdk8) is required but not found. The Checker Framework may not work correctly on Java 8.");
+      }
+    }
   }
 
   private void loadJavaSourceVersionAndJvmVersion() throws MojoFailureException {
