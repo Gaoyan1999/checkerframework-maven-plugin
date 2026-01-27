@@ -158,6 +158,61 @@ The plugin will automatically resolve and download the `checker` and `checker-qu
 
 * The plugin automatically skips execution for projects with packaging type `pom`.
 
+## Lombok Integration
+
+The plugin supports integration with [Project Lombok](https://projectlombok.org/). When Lombok is detected in your project, the plugin will automatically:
+
+1. Detect if Lombok is being used (by checking for Lombok dependencies or the `lombok-maven-plugin`)
+2. Look for delombok output directories configured in `lombok-maven-plugin`
+3. Use delombok-generated source files instead of original source files (which contain Lombok annotations)
+4. Automatically add `-AsuppressWarnings=type.anno.before.modifier` to suppress warnings from Lombok-generated code (if `suppressLombokWarnings` is enabled, which is `true` by default)
+
+### Configuring Lombok with Checker Framework
+
+To use Lombok with the Checker Framework plugin, you need to configure `lombok-maven-plugin` to generate delombok output before the Checker Framework runs. Here's a complete example configuration:
+
+```xml
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok-maven-plugin</artifactId>
+            <version>1.18.20.0</version>
+            <executions>
+                <execution>
+                    <phase>generate-sources</phase>
+                    <goals>
+                        <goal>delombok</goal>
+                    </goals>
+                    <configuration>
+                        <sourceDirectory>${project.basedir}/src/main/java</sourceDirectory>
+                        <outputDirectory>${project.build.directory}/delombok</outputDirectory>
+                        <addOutputDirectory>false</addOutputDirectory>
+                    </configuration>
+                </execution>
+            </executions>
+        </plugin>
+        <plugin>
+            <groupId>org.checkerframework</groupId>
+            <artifactId>checkerframework-maven-plugin</artifactId>
+            <version>1.0.0</version>
+            <configuration>
+                <annotationProcessors>
+                    <annotationProcessor>org.checkerframework.checker.nullness.NullnessChecker</annotationProcessor>
+                </annotationProcessors>                
+            </configuration>
+            <executions>
+                <execution>
+                    <goals>
+                        <goal>check</goal>
+                    </goals>
+                </execution>
+            </executions>
+        </plugin>
+    </plugins>
+</build>
+```
+
 ## JDK 8 vs JDK 9+ implementation details
 
 The plugin attempts to automatically configure the Checker Framework on both Java 8 and Java 9+ JVMs, following the [best practices in the Checker Framework manual](https://checkerframework.org/manual/#javac). In particular:
