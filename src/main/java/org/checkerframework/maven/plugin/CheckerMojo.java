@@ -96,6 +96,13 @@ public class CheckerMojo extends AbstractMojo {
   @Parameter(property = "extraJavacArgs")
   private List<String> extraJavacArgs;
 
+  /**
+   * Whether to suppress warnings from Lombok-generated code. If true, automatically adds
+   * @SuppressWarnings annotations to delombok output.
+   */
+  @Parameter(property = "suppressLombokWarnings", defaultValue = "true")
+  private boolean suppressLombokWarnings;
+
   /** The Checker Framework JAR file for the checker artifact */
   private File checkerFrameworkJar;
 
@@ -150,7 +157,12 @@ public class CheckerMojo extends AbstractMojo {
 
     log.info("Starting Checker Framework analysis with version: " + checkerFrameworkVersion);
 
-    final List<String> sources = collectSourceRoots();
+    // Handle Lombok integration
+    LombokIntegration lombokIntegration =
+        new LombokIntegration(project, log, annotationProcessors, suppressLombokWarnings);
+    lombokIntegration.handleIntegration();
+
+    final List<String> sources = collectSourceRoots(lombokIntegration);
     if (sources.isEmpty()) {
       log.info("No source files found.");
       return;
@@ -205,6 +217,12 @@ public class CheckerMojo extends AbstractMojo {
         commandline.createArg().setValue("-proc:only");
       }
 
+      // Automatically add suppressWarnings for Lombok if needed (before concatExtraJavacArgs)
+      if (extraJavacArgs == null) {
+        extraJavacArgs = new ArrayList<>();
+      }
+      lombokIntegration.addLombokSuppressWarningsIfNeeded(extraJavacArgs);
+      
       concatExtraJavacArgs(commandline);
 
       // Collect all source files (.java)
@@ -254,18 +272,42 @@ public class CheckerMojo extends AbstractMojo {
 
   /**
    * Collects source roots for checking. Includes both main and test sources unless excludeTests is
-   * true.
+   * true. If delombok output directory exists, uses it instead of original source roots.
    *
+   * @param lombokIntegration The Lombok integration handler
    * @return List of source root directories
    */
-  private List<String> collectSourceRoots() {
+  private List<String> collectSourceRoots(LombokIntegration lombokIntegration) {
     final Log log = getLog();
-    final List<String> sources = new ArrayList<>(project.getCompileSourceRoots());
-    if (!excludeTests) {
-      sources.addAll(project.getTestCompileSourceRoots());
+    List<String> sources = new ArrayList<>();
+    
+    // Check if delombok output directory exists and should be used
+    File delombokOutputDir = lombokIntegration.getDelombokOutputDirectory();
+    if (delombokOutputDir != null && delombokOutputDir.exists()) {
+      log.info("Using delombok output directory: " + delombokOutputDir.getAbsolutePath());
+      sources.add(delombokOutputDir.getAbsolutePath());
+      
+      // For test sources, check if there's a test delombok output directory
+      if (!excludeTests) {
+        File testDelombokOutputDir = lombokIntegration.getDelombokTestOutputDirectory();
+        if (testDelombokOutputDir != null && testDelombokOutputDir.exists()) {
+          log.info("Using delombok test output directory: " + testDelombokOutputDir.getAbsolutePath());
+          sources.add(testDelombokOutputDir.getAbsolutePath());
+        } else {
+          // Fallback to original test sources if delombok test output doesn't exist
+          sources.addAll(project.getTestCompileSourceRoots());
+        }
+      }
     } else {
-      log.info("Excluding test sources from checking.");
+      // Use original source roots if delombok output doesn't exist
+      sources.addAll(project.getCompileSourceRoots());
+      if (!excludeTests) {
+        sources.addAll(project.getTestCompileSourceRoots());
+      } else {
+        log.info("Excluding test sources from checking.");
+      }
     }
+    
     return sources;
   }
 
