@@ -12,8 +12,8 @@ import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 
 /**
- * Handles Lombok integration for the Checker Framework Maven plugin. This includes detecting
- * Lombok usage, finding delombok output directories, and adding necessary compiler arguments.
+ * Handles Lombok integration for the Checker Framework Maven plugin. This includes detecting Lombok
+ * usage, finding delombok output directories, and adding necessary compiler arguments.
  */
 public class LombokIntegration {
   private final MavenProject project;
@@ -63,7 +63,7 @@ public class LombokIntegration {
 
     // Check if delombok output directory exists and cache it
     cachedDelombokOutputDir = findDelombokOutputDirectory();
-    if (cachedDelombokOutputDir != null && cachedDelombokOutputDir.exists()) {
+    if (PluginUtil.exists(cachedDelombokOutputDir)) {
       log.info("Found delombok output directory: " + cachedDelombokOutputDir.getAbsolutePath());
       log.info(
           "Note: Make sure delombok is configured to generate @Generated annotations. "
@@ -124,8 +124,8 @@ public class LombokIntegration {
   }
 
   /**
-   * Gets the delombok output directory from lombok-maven-plugin configuration. Returns cached
-   * value if available, otherwise computes and caches it.
+   * Gets the delombok output directory from lombok-maven-plugin configuration. Returns cached value
+   * if available, otherwise computes and caches it.
    *
    * @return The delombok output directory File, or null if not found
    */
@@ -240,7 +240,8 @@ public class LombokIntegration {
    * @return The delombok test output directory File, or null if not found
    */
   public File getDelombokTestOutputDirectory() {
-    // For now, return null. In the future, this could check for test-specific delombok configuration
+    // TODO: For now, return null. In the future, this could check for test-specific delombok
+    // configuration
     // or use a convention like ${project.build.directory}/delombok-test
     return null;
   }

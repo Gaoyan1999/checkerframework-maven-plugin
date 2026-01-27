@@ -98,6 +98,17 @@ public class PluginUtil {
   }
 
   /**
+   * Checks if a file exists and is not null. This is a convenience method to avoid repetitive null
+   * checks before calling exists().
+   *
+   * @param file The file to check
+   * @return true if file is not null and exists, false otherwise
+   */
+  public static boolean exists(File file) {
+    return file != null && file.exists();
+  }
+
+  /**
    * Parses a version string (e.g., "3.53.0") and extracts the major and minor version numbers.
    *
    * @param versionString The version string to parse
