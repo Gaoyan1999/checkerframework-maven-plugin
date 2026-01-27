@@ -96,6 +96,13 @@ public class CheckerMojo extends AbstractMojo {
   @Parameter(property = "extraJavacArgs")
   private List<String> extraJavacArgs;
 
+  /**
+   * Whether to suppress warnings from Lombok-generated code. If true, automatically
+   * adds @SuppressWarnings annotations to delombok output.
+   */
+  @Parameter(property = "suppressLombokWarnings", defaultValue = "true")
+  private boolean suppressLombokWarnings;
+
   /** The Checker Framework JAR file for the checker artifact */
   private File checkerFrameworkJar;
 
@@ -150,7 +157,12 @@ public class CheckerMojo extends AbstractMojo {
 
     log.info("Starting Checker Framework analysis with version: " + checkerFrameworkVersion);
 
-    final List<String> sources = collectSourceRoots();
+    // Handle Lombok integration
+    LombokIntegration lombokIntegration =
+        new LombokIntegration(project, log, annotationProcessors, suppressLombokWarnings);
+    lombokIntegration.handleIntegration();
+
+    final List<String> sources = collectSourceRoots(lombokIntegration);
     if (sources.isEmpty()) {
       log.info("No source files found.");
       return;
@@ -159,7 +171,8 @@ public class CheckerMojo extends AbstractMojo {
     File srcFofn = null;
     File cpFofn = null;
     try {
-      // Load Java version information first, as it's needed for determining which artifacts to locate
+      // Load Java version information first, as it's needed for determining which artifacts to
+      // locate
       loadJavaSourceVersionAndJvmVersion();
       locateArtifacts();
 
@@ -205,6 +218,12 @@ public class CheckerMojo extends AbstractMojo {
         commandline.createArg().setValue("-proc:only");
       }
 
+      // Automatically add suppressWarnings for Lombok if needed (before concatExtraJavacArgs)
+      if (extraJavacArgs == null) {
+        extraJavacArgs = new ArrayList<>();
+      }
+      lombokIntegration.addLombokSuppressWarningsIfNeeded(extraJavacArgs);
+
       concatExtraJavacArgs(commandline);
 
       // Collect all source files (.java)
@@ -231,10 +250,10 @@ public class CheckerMojo extends AbstractMojo {
       throw new MojoExecutionException("Error running Checker Framework", e);
     } finally {
       // Clean up temporary files
-      if (srcFofn != null && srcFofn.exists()) {
+      if (PluginUtil.exists(srcFofn)) {
         srcFofn.delete();
       }
-      if (cpFofn != null && cpFofn.exists()) {
+      if (PluginUtil.exists(cpFofn)) {
         cpFofn.delete();
       }
     }
@@ -254,18 +273,44 @@ public class CheckerMojo extends AbstractMojo {
 
   /**
    * Collects source roots for checking. Includes both main and test sources unless excludeTests is
-   * true.
+   * true. If delombok output directory exists, uses it instead of original source roots.
    *
+   * @param lombokIntegration The Lombok integration handler
    * @return List of source root directories
    */
-  private List<String> collectSourceRoots() {
+  private List<String> collectSourceRoots(LombokIntegration lombokIntegration) {
     final Log log = getLog();
-    final List<String> sources = new ArrayList<>(project.getCompileSourceRoots());
-    if (!excludeTests) {
-      sources.addAll(project.getTestCompileSourceRoots());
-    } else {
-      log.info("Excluding test sources from checking.");
+    List<String> sources = new ArrayList<>();
+
+    // Check if delombok output directory exists and should be used
+    if (!lombokIntegration.isLombokUsed()) {
+      // Use original source roots if delombok output doesn't exist
+      sources.addAll(project.getCompileSourceRoots());
+      if (!excludeTests) {
+        sources.addAll(project.getTestCompileSourceRoots());
+      }
+      return sources;
     }
+
+    File delombokOutputDir = lombokIntegration.getDelombokOutputDirectory();
+    if (!PluginUtil.exists(delombokOutputDir)) {
+      return sources;
+    }
+    sources.add(delombokOutputDir.getAbsolutePath());
+
+    // For test sources, check if there's a test delombok output directory
+    if (!excludeTests) {
+      File testDelombokOutputDir = lombokIntegration.getDelombokTestOutputDirectory();
+      if (PluginUtil.exists(testDelombokOutputDir)) {
+        log.info(
+            "Using delombok test output directory: " + testDelombokOutputDir.getAbsolutePath());
+        sources.add(testDelombokOutputDir.getAbsolutePath());
+      } else {
+        // Fallback to original test sources if delombok test output doesn't exist
+        sources.addAll(project.getTestCompileSourceRoots());
+      }
+    }
+
     return sources;
   }
 
@@ -382,7 +427,7 @@ public class CheckerMojo extends AbstractMojo {
    *
    * @return true if annotated JDK is needed, false otherwise
    */
-  private boolean needsAnnotatedJdk() {    
+  private boolean needsAnnotatedJdk() {
     // Only needed for Java 8
     if (jvmVersionNumber != 8 || javaSourceVersionNumber != 8) {
       return false;
@@ -403,8 +448,8 @@ public class CheckerMojo extends AbstractMojo {
   }
 
   /**
-   * Adds annotated JDK to the command line on demand. This is required when running Java 8 code
-   * on Java 8 JVM with Checker Framework <= 3.3.
+   * Adds annotated JDK to the command line on demand. This is required when running Java 8 code on
+   * Java 8 JVM with Checker Framework <= 3.3.
    *
    * @param commandline The command line to add annotated JDK to
    */
@@ -414,7 +459,7 @@ public class CheckerMojo extends AbstractMojo {
     }
 
     final Log log = getLog();
-    if (annotatedJdkJar != null && annotatedJdkJar.exists()) {
+    if (PluginUtil.exists(annotatedJdkJar)) {
       String annotatedJdkPath = annotatedJdkJar.getAbsolutePath();
       // Note: -Xbootclasspath/p is a compiler argument, not a JVM argument
       commandline.createArg().setValue("-Xbootclasspath/p:" + annotatedJdkPath);
@@ -457,7 +502,7 @@ public class CheckerMojo extends AbstractMojo {
 
     File errorProneJavacJar =
         PathUtils.getErrorProneJavacJar(project, repositorySystem, localRepository, session, log);
-    if (errorProneJavacJar != null && errorProneJavacJar.exists()) {
+    if (PluginUtil.exists(errorProneJavacJar)) {
       String errorProneJavacPath = errorProneJavacJar.getAbsolutePath();
       commandline.createArg().setValue("-Xbootclasspath/p:" + errorProneJavacPath);
     } else {
@@ -513,13 +558,8 @@ public class CheckerMojo extends AbstractMojo {
     if (needsAnnotatedJdk()) {
       annotatedJdkJar =
           PathUtils.getAnnotatedJdkJar(
-              project,
-              repositorySystem,
-              localRepository,
-              session,
-              checkerFrameworkVersion,
-              log);
-      if (annotatedJdkJar == null || !annotatedJdkJar.exists()) {
+              project, repositorySystem, localRepository, session, checkerFrameworkVersion, log);
+      if (!PluginUtil.exists(annotatedJdkJar)) {
         log.warn(
             "Annotated JDK (jdk8) is required but not found. The Checker Framework may not work correctly on Java 8.");
       }

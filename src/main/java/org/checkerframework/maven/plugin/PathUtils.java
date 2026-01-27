@@ -311,7 +311,7 @@ public class PathUtils {
             .findFirst();
     if (artifact.isPresent()) {
       File artifactFile = artifact.get().getFile();
-      if (artifactFile != null && artifactFile.exists()) {
+      if (PluginUtil.exists(artifactFile)) {
         return artifactFile;
       }
     }
@@ -362,7 +362,7 @@ public class PathUtils {
       if (result.getArtifacts() != null && !result.getArtifacts().isEmpty()) {
         Artifact resolvedArtifact = result.getArtifacts().iterator().next();
         File artifactFile = resolvedArtifact.getFile();
-        if (artifactFile != null && artifactFile.exists()) {
+        if (PluginUtil.exists(artifactFile)) {
           log.info(
               "Successfully downloaded " + artifactId + " to: " + artifactFile.getAbsolutePath());
           return artifactFile;
