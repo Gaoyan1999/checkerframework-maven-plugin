@@ -1,13 +1,12 @@
 package org.checkerframework.maven.plugin;
 
+import java.util.Arrays;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugin.logging.Log;
 import org.codehaus.plexus.util.cli.CommandLineException;
 import org.codehaus.plexus.util.cli.CommandLineUtils;
 import org.codehaus.plexus.util.cli.Commandline;
-
-import java.util.Arrays;
 
 /**
  * A CommandLineExecutor that reports the output and error streams with no additional processing.
