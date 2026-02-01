@@ -4,6 +4,8 @@
 
 This plugin configures Maven to use the [Checker Framework](https://checkerframework.org) for pluggable type-checking during the compilation phase.
 
+**Note:** This plugin has not yet been approved by the Checker Framework project, so it is not published to Maven Central under `org.checkerframework`. For now, clone this repository, run `mvn clean install` in the plugin directory, then use the plugin in your project as described in [Download](#download) and [Using a locally-built plugin](#using-a-locally-built-plugin) below.
+
 ## Download
 
 Add the following to your `pom.xml` file:
@@ -256,11 +258,18 @@ Example toolchain configuration:
 
 ## Using a locally-built plugin
 
-You can build the plugin locally rather than downloading it from Maven Central.
+Because the plugin is not yet published to Maven Central, you need to build and install it locally:
 
-To build the plugin from source, run `mvn clean install`.
-
-If you want to use a locally-built version of the plugin, you can install it to your local Maven repository by running `mvn clean install`. Then, use the plugin in your project as described in the Download section above.
+1. Clone this repository and go into its directory:
+   ```bash
+   git@github.com:Gaoyan1999/checkerframework-maven-plugin.git
+   cd checker-maven-plugin
+   ```
+2. Install the plugin into your local Maven repository:
+   ```bash
+   mvn clean install
+   ```
+3. In your own project’s `pom.xml`, add the plugin with the same `groupId`, `artifactId`, and `version` as in the [Download](#download) section above. Maven will resolve it from your local `~/.m2/repository`.
 
 ## Complete example
 
